@@ -1,0 +1,3 @@
+[submodule "layouts"]
+	path = layouts
+	url = https://github.com/hid-io/layouts
