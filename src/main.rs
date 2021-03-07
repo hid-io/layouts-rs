@@ -1,19 +1,19 @@
 use layouts::Layouts;
+use std::path::PathBuf;
 
 pub const USE_GITHUB: bool = true;
+pub const LOCAL_DIR: &str = "layouts";
+pub const GIT_REPO: &str = "hid-io/layouts";
+pub const GIT_BRANCH: &str = "master";
 
 fn main() {
-    if USE_GITHUB {
-        let api_token = std::env::var("GITHUB_API_TOKEN").ok();
-        let layouts = Layouts::from_github("hid-io/layouts".to_string(), "master", api_token);
-        for layout in layouts.list_layouts() {
-            println!("{}:\n{:?}\n", layout, layouts.get_layout(&layout));
-        }
+    let mut layouts = if USE_GITHUB {
+        let api_token = std::env::var("GITHUB_API_TOKEN");
+        Layouts::from_github(GIT_REPO.to_string(), GIT_BRANCH.to_string(), api_token.ok())
     } else {
-        let layout_dir = "layouts";
-        let layouts = Layouts::from_dir(layout_dir);
-        for layout in layouts.list_layouts() {
-            println!("{}:\n{:?}\n", layout, layouts.get_layout(&layout));
-        }
-    }
+        Layouts::from_dir(PathBuf::from(LOCAL_DIR))
+    };
+
+    let layout = "keyboards/en_US.json";
+    println!("{}:\n{:?}\n", layout, layouts.get_layout(layout));
 }

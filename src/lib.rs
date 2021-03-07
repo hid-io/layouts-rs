@@ -62,55 +62,125 @@ impl Layout {
     }
 }
 
-pub struct Layouts {
-    layouts: HashMap<String, Layout>,
+#[derive(Debug, Clone)]
+pub enum LayoutSource {
+    Directory(PathBuf),
+    Github(GithubClient, String),
 }
 
-impl Layouts {
-    pub fn from_dir(layout_dir: &str) -> Self {
-        let mut layouts = HashMap::new();
-
-        let file_paths = glob(&format!("{}/**/*.json", layout_dir))
-            .unwrap()
-            .filter_map(|x| x.ok());
-        for path in file_paths {
-            let name = path
-                .clone()
+pub fn list_dir(layout_dir: &str) -> Vec<String> {
+    glob(&format!("{}/**/*.json", layout_dir))
+        .unwrap()
+        .filter_map(|path| path.ok())
+        .map(|path| {
+            path.clone()
                 .strip_prefix(layout_dir)
                 .unwrap()
                 .to_string_lossy()
-                .to_string();
-            layouts.insert(name, Layout::from_file(path));
-        }
+                .to_string()
+        })
+        .collect()
+}
 
-        Layouts { layouts }
+pub fn list_github(client: &GithubClient, reftag: &str) -> Vec<String> {
+    client
+        .list_files(reftag)
+        .unwrap()
+        .into_iter()
+        .filter(|path| path.ends_with(".json"))
+        .collect()
+}
+
+impl LayoutSource {
+    pub fn list_layouts(&self) -> Vec<String> {
+        match self {
+            LayoutSource::Directory(dir) => list_dir(&dir.to_string_lossy()),
+            LayoutSource::Github(client, reftag) => list_github(client, &reftag),
+        }
     }
 
-    pub fn from_github(repo: String, reftag: &str, api_token: Option<String>) -> Self {
-        let mut layouts = HashMap::new();
-
-        let github = GithubClient::new(repo, api_token);
-        for file in github.list_files(reftag).unwrap() {
-            if file.ends_with(".json") {
-                let data = github.get_file_raw(&file, reftag).unwrap();
-                layouts.insert(file, Layout::from_str(&data));
+    pub fn fetch_layout(&self, file: &str) -> Layout {
+        //dbg!(file);
+        match self {
+            LayoutSource::Directory(dir) => Layout::from_file(dir.join(file)),
+            LayoutSource::Github(client, reftag) => {
+                let data = client.get_file_raw(&file, reftag).unwrap();
+                Layout::from_str(&data)
             }
         }
+    }
+}
 
-        Layouts { layouts }
+#[derive(Debug, Clone)]
+pub struct Layouts {
+    files: Vec<String>,
+    cached_layouts: HashMap<String, Layout>,
+    source: LayoutSource,
+}
+
+impl Layouts {
+    pub fn new(source: LayoutSource) -> Self {
+        Layouts {
+            source,
+            files: vec![],
+            cached_layouts: HashMap::new(),
+        }
     }
 
-    pub fn list_layouts(&self) -> Vec<String> {
-        self.layouts.keys().cloned().collect()
+    pub fn from_dir(dir: PathBuf) -> Self {
+        Layouts::new(LayoutSource::Directory(dir))
     }
 
-    pub fn get_layout(&self, name: &str) -> Layout {
-        let layout = &self.layouts[name];
+    pub fn from_github(repo: String, reftag: String, api_token: Option<String>) -> Self {
+        let client = GithubClient::new(repo, api_token);
+        Layouts::new(LayoutSource::Github(client, reftag))
+    }
+
+    pub fn list_layouts(&mut self) -> Vec<String> {
+        if self.files.is_empty() {
+            self.files = self.source.list_layouts();
+        }
+        self.files.clone()
+    }
+
+    pub fn get_layout(&mut self, name: &str) -> Layout {
+        if !self.cached_layouts.contains_key(name) {
+            let layout = self.source.fetch_layout(name);
+            self.cached_layouts.insert(name.to_string(), layout);
+        }
+
+        let layout = &self.cached_layouts[name];
+        let parent = layout.parent.clone();
 
         let mut new_layout = layout.clone();
-        if let Some(parent) = &layout.parent {
-            new_layout.merge(&self.get_layout(parent));
+        if let Some(parent) = parent {
+            new_layout.merge(&self.get_layout(&parent));
         }
         new_layout
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_dir() {
+        let layout_dir = PathBuf::from("layouts");
+        let mut layouts = Layouts::from_dir(layout_dir);
+        for layout in layouts.list_layouts() {
+            println!("{}:\n{:?}\n", layout, layouts.get_layout(&layout));
+        }
+    }
+
+    #[test]
+    fn test_github() {
+        let api_token = std::env::var("GITHUB_API_TOKEN");
+        let mut layouts = Layouts::from_github(
+            "hid-io/layouts".to_string(),
+            "master".to_string(),
+            api_token.ok(),
+        );
+        for layout in layouts.list_layouts() {
+            println!("{}:\n{:?}\n", layout, layouts.get_layout(&layout));
+        }
     }
 }

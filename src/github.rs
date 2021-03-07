@@ -48,6 +48,7 @@ pub struct GithubFile {
     _links: HashMap<String, String>,
 }
 
+#[derive(Debug, Clone)]
 pub struct GithubClient {
     client: Client,
     api_url: String,
