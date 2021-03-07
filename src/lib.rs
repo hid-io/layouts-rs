@@ -1,6 +1,9 @@
+pub mod github;
+
 #[macro_use]
 extern crate derive_object_merge;
 
+use github::GithubClient;
 use glob::glob;
 use object_merge::Merge;
 use serde::{Deserialize, Serialize};
@@ -50,9 +53,12 @@ pub struct Layout {
 }
 
 impl Layout {
-    pub fn new(file: PathBuf) -> Layout {
+    pub fn from_file(file: PathBuf) -> Layout {
         let data = fs::read_to_string(&file).unwrap();
-        serde_json::from_str(&data).unwrap()
+        Layout::from_str(&data)
+    }
+    pub fn from_str(s: &str) -> Layout {
+        serde_json::from_str(s).unwrap()
     }
 }
 
@@ -61,7 +67,7 @@ pub struct Layouts {
 }
 
 impl Layouts {
-    pub fn new(layout_dir: &str) -> Self {
+    pub fn from_dir(layout_dir: &str) -> Self {
         let mut layouts = HashMap::new();
 
         let file_paths = glob(&format!("{}/**/*.json", layout_dir))
@@ -74,7 +80,21 @@ impl Layouts {
                 .unwrap()
                 .to_string_lossy()
                 .to_string();
-            layouts.insert(name, Layout::new(path));
+            layouts.insert(name, Layout::from_file(path));
+        }
+
+        Layouts { layouts }
+    }
+
+    pub fn from_github(repo: String, reftag: &str, api_token: Option<String>) -> Self {
+        let mut layouts = HashMap::new();
+
+        let github = GithubClient::new(repo, api_token);
+        for file in github.list_files(reftag).unwrap() {
+            if file.ends_with(".json") {
+                let data = github.get_file_raw(&file, reftag).unwrap();
+                layouts.insert(file, Layout::from_str(&data));
+            }
         }
 
         Layouts { layouts }
