@@ -1,4 +1,4 @@
-use layouts::Layouts;
+use layouts_rs::Layouts;
 use std::path::PathBuf;
 
 pub const USE_GITHUB: bool = true;

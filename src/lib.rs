@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -55,10 +56,15 @@ pub struct Layout {
 impl Layout {
     pub fn from_file(file: PathBuf) -> Layout {
         let data = fs::read_to_string(&file).unwrap();
-        Layout::from_str(&data)
+        Layout::from_str(&data).unwrap()
     }
-    pub fn from_str(s: &str) -> Layout {
-        serde_json::from_str(s).unwrap()
+}
+
+impl FromStr for Layout {
+    type Err = serde_json::error::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_str(s)
     }
 }
 
@@ -73,8 +79,7 @@ pub fn list_dir(layout_dir: &str) -> Vec<String> {
         .unwrap()
         .filter_map(|path| path.ok())
         .map(|path| {
-            path.clone()
-                .strip_prefix(layout_dir)
+            path.strip_prefix(layout_dir)
                 .unwrap()
                 .to_string_lossy()
                 .to_string()
@@ -95,7 +100,7 @@ impl LayoutSource {
     pub fn list_layouts(&self) -> Vec<String> {
         match self {
             LayoutSource::Directory(dir) => list_dir(&dir.to_string_lossy()),
-            LayoutSource::Github(client, reftag) => list_github(client, &reftag),
+            LayoutSource::Github(client, reftag) => list_github(client, reftag),
         }
     }
 
@@ -104,8 +109,8 @@ impl LayoutSource {
         match self {
             LayoutSource::Directory(dir) => Layout::from_file(dir.join(file)),
             LayoutSource::Github(client, reftag) => {
-                let data = client.get_file_raw(&file, reftag).unwrap();
-                Layout::from_str(&data)
+                let data = client.get_file_raw(file, reftag).unwrap();
+                Layout::from_str(&data).unwrap()
             }
         }
     }
@@ -162,6 +167,9 @@ impl Layouts {
 
 #[cfg(test)]
 mod tests {
+    use super::Layouts;
+    use std::path::PathBuf;
+
     #[test]
     fn test_dir() {
         let layout_dir = PathBuf::from("layouts");
